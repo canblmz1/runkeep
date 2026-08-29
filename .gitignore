@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# archives produced by `runkeep rescue`
+*.db
+*.db-wal
+*.db-shm
+
+.DS_Store
+demo.gif.tmp

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runkeep"
+version = "0.1.0"
+description = "Archive a GitHub repo's CI history (workflow runs, check suites, check runs, statuses) into a local SQLite file before the Oct 1, 2026 retention change deletes it."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["github", "actions", "ci", "archive", "backup", "workflow-runs", "checks", "retention"]
+authors = [{ name = "canblmz1" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: System :: Archiving :: Backup",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/canblmz1/runkeep"
+Changelog = "https://github.com/canblmz1/runkeep/releases"
+
+[project.scripts]
+runkeep = "runkeep.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+runkeep = ["py.typed"]
