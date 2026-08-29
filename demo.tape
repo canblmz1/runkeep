@@ -11,7 +11,7 @@ Set Padding 18
 Set TypingSpeed 22ms
 Set PlaybackSpeed 1.8
 
-Env RUNKEEP_QUIET 1
+Env RUNKEEP_QUIET "1"
 
 Hide
 Type "cd $(mktemp -d) && clear"
