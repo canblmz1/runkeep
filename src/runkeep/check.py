@@ -22,7 +22,7 @@ from .http_client import RestClient
 RETENTION_DAYS = 90
 POLICY_DATE = "Oct 1, 2026"
 DIRECT_PAGE_LIMIT = 1000  # GitHub 422s on deep offsets; stay well under
-SEED_DAYS = 430  # GitHub already trims public runs at ~400d, so seed the search there
+SEED_DAYS = 400  # GitHub already trims public runs at ~400d, so seed the oldest-run search there
 MAX_BISECT = 12
 APPROX_AT = 5_000  # counts >= this are GitHub search estimates; show them rounded
 
@@ -112,8 +112,12 @@ def _find_oldest(
         if before_lo > 0:  # genuinely older history exists — widen to the repo's birth
             lo, before_lo = repo_created, 0
 
+    # For very large repos, stop at a few-day window rather than nail the exact day — it
+    # shaves a couple of round trips and the exact oldest second is not meaningful at that
+    # scale. The result is then flagged as an estimate.
+    stop_days = 4 if total >= 20_000 else 1
     for _ in range(MAX_BISECT):
-        if (hi - lo).days <= 1 or (before_hi - before_lo) <= DIRECT_PAGE_LIMIT:
+        if (hi - lo).days <= stop_days or (before_hi - before_lo) <= DIRECT_PAGE_LIMIT:
             break
         mid = lo + (hi - lo) // 2
         n = _count(rest, path, f"<{mid.isoformat()}")
@@ -154,14 +158,14 @@ def run_check(
     rest = RestClient(token, **kwargs)
 
     t0 = time.monotonic()
-
-    repo_json, _ = rest.get_json(f"/repos/{owner}/{repo}")  # 404 -> RepoNotFound
-    repo_created = _parse_day(repo_json.get("created_at")) or date(2015, 1, 1)
-
     path = _runs_path(owner, repo)
+
+    # First real request. A missing (or invisible) repo 404s here -> RepoNotFound.
     older = _count(rest, path, f"<{cutoff}")
     within = _count(rest, path, f">={cutoff}")
     total = older + within
+    # GitHub Actions launched in 2018; that's a safe lower bound for the oldest-run search.
+    repo_created = date(2018, 1, 1)
 
     if total == 0:
         oldest_at, oldest_est = None, False
@@ -227,7 +231,8 @@ def format_check(result: CheckResult, *, color: bool) -> str:
 
     if result.oldest_run_at:
         age = _age(result.oldest_run_at, today)
-        oldest = result.oldest_run_at[:10] + (f"  {dim}({age}){reset}" if age else "")
+        approx = "~" if result.oldest_is_estimate else ""
+        oldest = f"{approx}{result.oldest_run_at[:10]}" + (f"  {dim}({age}){reset}" if age else "")
     else:
         oldest = f"{dim}none{reset}"
 

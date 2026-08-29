@@ -131,6 +131,8 @@ class FakeGitHub:
             return self._graphql(json.loads(body.decode()))
         m = re.match(r"^/repos/([^/]+)/([^/]+)/actions/runs$", parsed.path)
         if m:
+            if m.group(2) == self.missing_repo_name:
+                return (404, {}, json.dumps({"message": "Not Found"}).encode())
             return self._list_runs(qs)
         m = re.match(r"^/repos/([^/]+)/([^/]+)/check-suites/(\d+)/check-runs$", parsed.path)
         if m:
