@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "runkeep"
 version = "0.1.0"
-description = "Archive a GitHub repo's CI history (workflow runs, check suites, check runs, statuses) into a local SQLite file before the Oct 1, 2026 retention change deletes it."
+description = "Archive a GitHub repo's CI history to local SQLite before GitHub's new 90-day retention window starts applying to run history on Oct 1, 2026."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

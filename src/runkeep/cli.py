@@ -51,7 +51,8 @@ def _stderr(msg: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="runkeep",
-        description="Archive GitHub CI history before the Oct 1, 2026 retention change deletes it.",
+        description="Archive a GitHub repo's CI history to local SQLite before the Oct 1, 2026 "
+        "retention change starts applying to run history.",
     )
     sub = p.add_subparsers(dest="command", required=True)
 
