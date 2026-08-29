@@ -22,12 +22,16 @@ jobs:
           path: demo.tape
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Report size
+        run: ls -l demo.gif && du -h demo.gif
       - name: Commit demo.gif
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- demo.gif; then
-            git add demo.gif
-            git commit -m "chore: regenerate demo.gif"
+          git add demo.gif
+          if git diff --cached --quiet; then
+            echo "demo.gif unchanged — nothing to commit"
+          else
+            git commit -m "chore: regenerate demo.gif [skip ci]"
             git push
           fi
