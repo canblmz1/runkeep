@@ -73,9 +73,10 @@ class CheckTests(unittest.TestCase):
     def test_large_counts_render_approximate_small_counts_exact(self) -> None:
         self.assertEqual(display_count(2_667), ("2,667", False))
         self.assertEqual(display_count(4_999), ("4,999", False))
-        self.assertEqual(display_count(104_388), ("~100,000", True))
-        self.assertEqual(display_count(49_188), ("~49,000", True))
-        self.assertEqual(display_count(7_234), ("~7,200", True))
+        self.assertEqual(display_count(104_388), ("~104k", True))
+        self.assertEqual(display_count(49_188), ("~49k", True))
+        self.assertEqual(display_count(7_234), ("~7k", True))
+        self.assertEqual(display_count(1_530_000), ("~1.5M", True))
 
     def test_wording_is_defensible_not_a_guaranteed_deletion_date(self) -> None:
         line = retention_line(2_667)
@@ -83,7 +84,7 @@ class CheckTests(unittest.TestCase):
         self.assertNotIn("deleted", line)
         self.assertNotIn("will be", line)
         self.assertEqual(
-            retention_line(104_388), "~100,000 runs are outside the 90-day retention window."
+            retention_line(104_388), "~104k runs are outside the 90-day retention window."
         )
 
     def test_formatted_output_shape(self) -> None:

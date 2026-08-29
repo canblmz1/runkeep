@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 
 from .http_client import RestClient
+from .metrics import compute_completeness
 from .storage import Store
 
 
@@ -32,15 +33,23 @@ class VerifyReport:
     runs_sampled: int
     runs_matched: int
     runs_deleted_at_source: int
+    core_complete: bool = True
+    third_party_requested: bool = False
+    third_party_complete: bool = True
+    third_party_gap_commits: int = 0
     mismatches: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
 
     @property
     def ok(self) -> bool:
+        """A spot-check + invariant pass on what's in the archive - not a proof of every
+        remote record. 'ok' means: everything checked lines up, the invariant holds, and
+        the archive's own core_complete flag is true."""
         return (
             self.invariant_violations == 0
             and self.suites_matched == self.suites_sampled
             and self.runs_matched + self.runs_deleted_at_source == self.runs_sampled
+            and self.core_complete
         )
 
     def as_dict(self) -> dict:
@@ -53,11 +62,16 @@ class VerifyReport:
             f"  verify {self.repo}  ({self.db_path})",
             "",
             f"  archive invariant   {self.total_suites - self.invariant_violations}/{self.total_suites} suites consistent",
-            f"  suites vs GitHub    {self.suites_matched}/{self.suites_sampled} match",
-            f"  runs vs GitHub      {self.runs_matched}/{self.runs_sampled} match"
-            + (f"  (+{self.runs_deleted_at_source} already deleted at source)"
+            f"  suites vs GitHub    {self.suites_matched}/{self.suites_sampled} match  (spot-check)",
+            f"  runs vs GitHub      {self.runs_matched}/{self.runs_sampled} match  (spot-check)"
+            + (f"  +{self.runs_deleted_at_source} deleted at source"
                if self.runs_deleted_at_source else ""),
+            f"  core archive        {'complete' if self.core_complete else 'INCOMPLETE'}",
         ]
+        if self.third_party_requested:
+            tp = "complete" if self.third_party_complete else (
+                f"incomplete ({self.third_party_gap_commits} commits could not be queried)")
+            lines.append(f"  third-party checks  {tp}")
         for m in self.mismatches[:20]:
             lines.append(f"    - {m}")
         lines += ["", f"  {tick}  ({self.elapsed_s:.1f}s)", ""]
@@ -159,6 +173,7 @@ def run_verify(
                 f"{(live.get('head_sha') or '')[:8]}/{live.get('conclusion')}"
             )
 
+    c = compute_completeness(store)
     store.close()
     return VerifyReport(
         repo=slug,
@@ -170,6 +185,10 @@ def run_verify(
         runs_sampled=len(run_picks),
         runs_matched=runs_matched,
         runs_deleted_at_source=runs_deleted,
+        core_complete=c.core_complete,
+        third_party_requested=c.thirdparty_requested,
+        third_party_complete=c.third_party_complete,
+        third_party_gap_commits=c.thirdparty_gap_commits,
         mismatches=mismatches,
         elapsed_s=time.monotonic() - t0,
     )

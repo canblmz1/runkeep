@@ -20,7 +20,7 @@ from .http_client import FetchFn, GraphQLClient, Meter, RestClient
 from .hydration import hydrate_runs
 from .metrics import Completeness, compute_completeness
 from .models import run_from_rest
-from .statuses import collect_statuses
+from .statuses import collect_statuses, enumerate_check_suites
 from .storage import Store
 from .thirdparty import hydrate_thirdparty_suites
 
@@ -59,12 +59,16 @@ def run_rescue(
     status_batch: int = 60,
     with_thirdparty: bool = True,
     notify=None,
+    sleep=None,
     fetch_rest: FetchFn | None = None,
     fetch_gql: FetchFn | None = None,
 ) -> RescueResult:
     meter = Meter()
-    rest = RestClient(token, fetch=fetch_rest, meter=meter, notify=notify)
-    gql = GraphQLClient(token, fetch=fetch_gql, meter=meter, notify=notify)
+    ckw = {"meter": meter, "notify": notify}
+    if sleep is not None:
+        ckw["sleep"] = sleep
+    rest = RestClient(token, fetch=fetch_rest, **ckw)
+    gql = GraphQLClient(token, fetch=fetch_gql, **ckw)
 
     resuming = db_path != ":memory:" and os.path.exists(db_path)
     store = Store(db_path)
@@ -74,7 +78,7 @@ def run_rescue(
             store, rest, gql, owner, repo, meter, resuming,
             db_path=db_path, limit=limit, since=since, until=until, cap=cap,
             hydrate_batch=hydrate_batch, status_batch=status_batch,
-            with_thirdparty=with_thirdparty,
+            with_thirdparty=with_thirdparty, notify=notify,
         )
     except BaseException:
         # An interrupt or crash: flush what we have and release the file so `rescue` can resume.
@@ -102,6 +106,7 @@ def _rescue(
     hydrate_batch: int,
     status_batch: int,
     with_thirdparty: bool,
+    notify=None,
 ) -> "RescueResult":
     if resuming:
         _log(
@@ -158,25 +163,40 @@ def _rescue(
         ),
     )
 
-    # ---- Pass B: legacy statuses + (optional) check-suite enumeration --
+    # ---- Pass B: legacy commit statuses (core, robust) -----------------
     shas = store.shas_needing_status()
     _log(f"statuses: {len(shas)} commits to probe")
     collect_statuses(
         gql, owner, repo, shas, store,
-        batch_size=status_batch,
-        include_check_suites=with_thirdparty,
         on_batch=lambda i, m: _log(f"status batch {i}/{m}"),
     )
 
-    # ---- Pass C: third-party suite check runs --------------------------
+    # ---- Pass B2 + C: third-party (optional, adaptive) -----------------
+    store.set_meta("thirdparty_requested", "true" if with_thirdparty else "false")
+    store.commit()
     if with_thirdparty:
+        all_shas = [
+            r[0] for r in store.conn.execute(
+                "SELECT DISTINCT head_sha FROM workflow_run WHERE head_sha IS NOT NULL"
+            )
+        ]
+        _log(f"third-party: enumerating check suites for {len(all_shas)} commits (adaptive)")
+        es = enumerate_check_suites(
+            gql, rest, owner, repo, all_shas, store, batch_size=status_batch, notify=notify,
+            on_progress=lambda d, t: _log(f"third-party enum {d}/{t}"),
+        )
+        _log(
+            f"third-party enum: {es.batches_ok} batches ok, {es.splits} splits, "
+            f"min batch {es.min_batch}, {es.singleton_failures} commits unresolved"
+        )
         tp_ids = store.pending_thirdparty_suite_ids()
         if tp_ids:
             _log(f"third-party: hydrating {len(tp_ids)} independent check suites")
-            hydrate_thirdparty_suites(
-                gql, rest, owner, repo, tp_ids, store,
-                on_batch=lambda i, m: _log(f"third-party batch {i}/{m}"),
+            hs = hydrate_thirdparty_suites(
+                gql, rest, owner, repo, tp_ids, store, notify=notify,
+                on_progress=lambda d, t: _log(f"third-party hydrate {d}/{t}"),
             )
+            _log(f"third-party hydrate: {hs.splits} splits, {hs.singleton_failures} suites unresolved")
 
     elapsed = time.monotonic() - t0
     _persist_meta(store, meter, elapsed, owner, repo)

@@ -98,6 +98,11 @@ CREATE TABLE IF NOT EXISTS discovery_slice (
     completed_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (start_iso, end_iso)
 );
+CREATE TABLE IF NOT EXISTS thirdparty_probe (
+    commit_sha   TEXT PRIMARY KEY,
+    suites_found INTEGER NOT NULL,
+    probed_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS archive_meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -191,6 +196,8 @@ class Store:
         )
 
     def record_gap(self, kind: str, ref: str, detail: str = "") -> None:
+        # idempotent: re-running rescue must not pile up duplicate gap rows
+        self.conn.execute("DELETE FROM hydration_gap WHERE kind=? AND ref=?", (kind, ref))
         self.conn.execute(
             "INSERT INTO hydration_gap (kind, ref, detail) VALUES (?, ?, ?)", (kind, ref, detail)
         )
@@ -201,6 +208,19 @@ class Store:
             "ON CONFLICT(start_iso, end_iso) DO UPDATE SET run_count=excluded.run_count",
             (start_iso, end_iso, run_count),
         )
+
+    def record_thirdparty_probe(self, sha: str, suites_found: int) -> None:
+        self.conn.execute(
+            "INSERT INTO thirdparty_probe (commit_sha, suites_found) VALUES (?, ?) "
+            "ON CONFLICT(commit_sha) DO UPDATE SET suites_found=excluded.suites_found",
+            (sha, suites_found),
+        )
+        self.conn.execute(
+            "DELETE FROM hydration_gap WHERE kind='thirdparty_enum' AND ref=?", (sha,)
+        )
+
+    def thirdparty_probed(self) -> set[str]:
+        return {r[0] for r in self.conn.execute("SELECT commit_sha FROM thirdparty_probe")}
 
     def set_meta(self, key: str, value) -> None:
         self.conn.execute(

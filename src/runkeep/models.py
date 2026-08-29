@@ -183,6 +183,35 @@ def suite_from_graphql(node: dict, run: RunRow) -> tuple[SuiteRow, AppRow | None
     return suite, app, check_rows
 
 
+def thirdparty_suite_from_rest(suite: dict, sha: str) -> tuple[SuiteRow, AppRow | None]:
+    """A check suite from the REST ``commits/{sha}/check-suites`` fallback."""
+    app_d = suite.get("app") or {}
+    app = None
+    if app_d.get("id") is not None:
+        app = AppRow(
+            database_id=app_d["id"],
+            node_id=app_d.get("node_id"),
+            slug=app_d.get("slug"),
+            name=app_d.get("name"),
+        )
+    row = SuiteRow(
+        database_id=suite.get("id"),
+        node_id=suite.get("node_id"),
+        workflow_run_id=None,
+        status=(suite.get("status") or "").upper() or None,
+        conclusion=(suite.get("conclusion") or "").upper() or None,
+        app_id=(app.database_id if app else None),
+        head_sha=suite.get("head_sha") or sha,
+        branch=suite.get("head_branch"),
+        created_at=suite.get("created_at"),
+        updated_at=suite.get("updated_at"),
+        checkrun_total_count=None,
+        checkrun_source="pending",
+        checkrun_complete=False,
+    )
+    return row, app
+
+
 def check_runs_from_rest(suite_db: int, rest_runs: list[dict]) -> list[CheckRunRow]:
     out = []
     for n in rest_runs:

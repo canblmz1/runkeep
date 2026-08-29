@@ -46,6 +46,7 @@ class MetricsTests(unittest.TestCase):
             self.s.upsert_run(_run(rd, hydrated=True))
             self.s.upsert_suite(_suite(rd * 10, rd, total=1, complete=True))
             self.s.replace_check_runs(rd * 10, [_check(rd * 100, rd * 10)])
+        self.s.record_status_probe("sha", has_status=False, context_count=0)
         self.s.commit()
 
     def test_all_green_is_core_complete(self) -> None:

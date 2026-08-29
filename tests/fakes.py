@@ -60,10 +60,17 @@ class FakeGitHub:
         statuses_for_sha: dict[str, list[dict]] | None = None,
         null_run_nodes: set[str] | None = None,
         thirdparty_suites_for_sha: dict[str, list[dict]] | None = None,
+        fail_tp_enum_shas: set[str] | None = None,
+        fail_tp_rest_shas: set[str] | None = None,
+        tp_enum_ok_below: int = 1,
         runs_per_sha: int = 3,
         repo_created_at: str = "2020-01-01T00:00:00Z",
         missing_repo_name: str | None = None,
     ) -> None:
+        self.fail_tp_enum_shas = fail_tp_enum_shas or set()
+        self.fail_tp_rest_shas = fail_tp_rest_shas or set()
+        # a fail_tp_enum sha 504s only in batches of >= tp_enum_ok_below shas
+        self.tp_enum_ok_below = tp_enum_ok_below
         self.checks_per_suite = checks_per_suite or {}
         self.over_100_suites = over_100_suites or set()
         self.statuses_for_sha = statuses_for_sha or {}
@@ -134,12 +141,36 @@ class FakeGitHub:
             if r is None:
                 return (404, {}, json.dumps({"message": "Not Found"}).encode())
             return (200, {}, json.dumps(r).encode())
+        m = re.match(r"^/repos/([^/]+)/([^/]+)/commits/([0-9a-fx]+)/check-suites$", parsed.path)
+        if m:
+            return self._commit_check_suites(m.group(3))
         m = re.match(r"^/repos/([^/]+)/([^/]+)$", parsed.path)
         if m:
             return self._repo(m.group(1), m.group(2))
         return (404, {}, json.dumps({"message": f"fake has no route for {parsed.path}"}).encode())
 
     # ---- REST ----
+    def _commit_check_suites(self, sha: str):
+        if sha in self.fail_tp_rest_shas:
+            return (504, {}, json.dumps({"message": "server timeout"}).encode())
+        suites = self.thirdparty_suites_for_sha.get(sha, [])
+        payload = {
+            "total_count": len(suites),
+            "check_suites": [
+                {
+                    "id": s["database_id"],
+                    "node_id": s.get("node_id", f"TPS_{s['database_id']}"),
+                    "head_sha": sha,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "app": {"id": 900 + s["database_id"] % 100, "slug": s["app_slug"],
+                            "name": s["app_slug"], "node_id": f"A_{s['app_slug']}"},
+                }
+                for s in suites
+            ],
+        }
+        return (200, {}, json.dumps(payload).encode())
+
     def _repo(self, owner: str, name: str):
         if name == self.missing_repo_name:
             return (404, {}, json.dumps({"message": "Not Found"}).encode())
@@ -328,6 +359,10 @@ class FakeGitHub:
         return None
 
     def _graphql_statuses(self, q: str, *, want_suites: bool = False):
+        shas_in_q = [m[1] for m in re.findall(r'(c\d+):\s*object\(oid:\s*"([0-9a-fx]+)"\)', q)]
+        if (want_suites and self.fail_tp_enum_shas.intersection(shas_in_q)
+                and len(shas_in_q) >= self.tp_enum_ok_below):
+            return (504, {}, json.dumps({"message": "server timeout"}).encode())
         repo: dict = {}
         for alias, sha in re.findall(r'(c\d+):\s*object\(oid:\s*"([0-9a-fx]+)"\)', q):
             ctxs = self.statuses_for_sha.get(sha)

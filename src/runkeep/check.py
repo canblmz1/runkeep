@@ -52,12 +52,13 @@ class CheckResult:
 
 
 def display_count(n: int) -> tuple[str, bool]:
-    """(display string, is_approximate). Small counts exact; large ones rounded to 2 sig figs."""
+    """(display string, is_approximate). Small counts are exact; large ones are shown to the
+    nearest thousand with a leading ~, because GitHub's created= search counts drift a few %."""
     if n < APPROX_AT:
         return f"{n:,}", False
-    digits = len(str(n))
-    rounded = round(n, -(digits - 2))
-    return f"~{rounded:,}", True
+    if n < 1_000_000:
+        return f"~{round(n / 1000):,}k", True
+    return f"~{round(n / 100_000) / 10:g}M", True
 
 
 def retention_line(n: int) -> str:

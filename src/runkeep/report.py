@@ -44,27 +44,41 @@ def rescue_summary(result: RescueResult, *, color: bool = False) -> str:
         rows.append(("third-party", f"{c.thirdparty_suites:,} suites, {c.thirdparty_check_runs:,} checks"))
 
     missing = c.missing_run_hydrations + c.missing_checks
-    gaps = result.store.count("hydration_gap")
     miss_val = f"{missing}" if missing == 0 else f"{bold}{missing}{reset}"
     if c.indeterminate_suites:
         miss_val += f"  {dim}(+{c.indeterminate_suites} suites: expected total unknown){reset}"
     rows.append(("missing", miss_val))
-    if gaps:
-        rows.append(("gaps recorded", f"{gaps}  {dim}(see the hydration_gap table){reset}"))
 
     width = max(len(k) for k, _ in rows)
     body = "\n".join(f"  {dim}{k.ljust(width)}{reset}   {v}" for k, v in rows)
 
     header = f"{result.owner}/{result.repo}  {dim}->{reset}  {result.store.path}"
     footer = f"{_fmt_bytes(result.db_bytes)} written in {_fmt_elapsed(result.elapsed_s)}"
-    verdict = (
-        f"{dim}complete - every discovered run and check is archived{reset}"
-        if c.core_complete
-        else f"{bold}incomplete{reset} {dim}- re-run to resume{reset}"
-    )
-    resumed = f"\n  {dim}(resumed an earlier run){reset}" if result.resumed else ""
 
-    return f"\n  {bold}{header}{reset}\n{resumed}\n{body}\n\n  {footer}\n  {verdict}\n"
+    out = ["", f"  {bold}{header}{reset}"]
+    if result.resumed:
+        out.append(f"  {dim}(resumed an earlier run){reset}")
+    out += ["", body, "", f"  {footer}", ""]
+
+    core = "complete" if c.core_complete else f"{bold}incomplete - re-run rescue to resume{reset}"
+    out.append(f"  {dim}Core CI history      {reset}{core}")
+    if c.thirdparty_requested:
+        if c.third_party_complete:
+            tp = "complete"
+        else:
+            bits = []
+            unresolved = c.thirdparty_gap_commits + c.thirdparty_commits_unprobed
+            if unresolved:
+                bits.append(f"{unresolved} commits could not be queried")
+            if c.thirdparty_pending_suites:
+                bits.append(f"{c.thirdparty_pending_suites} suites not hydrated")
+            tp = f"{bold}incomplete{reset} {dim}({'; '.join(bits) or 'gaps recorded'}){reset}"
+        out.append(f"  {dim}Third-party checks   {reset}{tp}")
+        if not c.third_party_complete:
+            out += ["", "  The archive is usable, but third-party check coverage is incomplete.",
+                    "  Re-run rescue to retry those gaps."]
+    out.append("")
+    return "\n".join(out)
 
 
 def summary_dict(result: RescueResult) -> dict:
@@ -85,6 +99,10 @@ def summary_dict(result: RescueResult) -> dict:
         "indeterminate_suites": c.indeterminate_suites,
         "gaps_recorded": result.store.count("hydration_gap"),
         "core_complete": c.core_complete,
+        "third_party_requested": c.thirdparty_requested,
+        "third_party_complete": c.third_party_complete,
+        "third_party_gap_commits": c.thirdparty_gap_commits,
+        "third_party_commits_unprobed": c.thirdparty_commits_unprobed,
         "db_bytes": result.db_bytes,
         "elapsed_s": round(result.elapsed_s, 1),
         "api_calls": {
