@@ -9,7 +9,9 @@ retention window starts applying to it on Oct 1, 2026.**
 ![demo](demo.gif)
 
 <!-- demo.gif is generated from demo.tape by the `demo` workflow (charmbracelet/vhs). -->
-<!-- The same session as text: -->
+
+<details>
+<summary>the same session as text</summary>
 
 ```console
 $ runkeep check pallets/click
@@ -53,6 +55,9 @@ $ runkeep verify click.db pallets/click --sample 8
 
   OK  (15.7s)
 ```
+</details>
+
+*(All output in this README is from real runs. Counts are live — yours will differ.)*
 
 ## Why
 
